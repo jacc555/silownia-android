@@ -1,0 +1,12 @@
+{
+  "appId": "pl.silownia.trener",
+  "appName": "Siłownia",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#E8590C"
+    }
+  }
+}
