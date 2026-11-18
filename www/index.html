@@ -446,12 +446,12 @@ function lastCard(e){if(e||S.ack===today())return '';const ks=vkeys();if(!ks.len
 
 const lastW=n=>{const k=Object.keys(S.log).sort().reverse();for(const d of k){const x=S.log[d].ex[n];if(x){const o=x.sets.filter(s=>s.ok&&+s.w>0);if(o.length)return o[o.length-1].w}}return''};
 const lastS=n=>{const k=Object.keys(S.log).sort().reverse();for(const d of k){const x=S.log[d].ex[n];if(x&&x.sets.some(t=>+t.w>0))return x.sets}return null};
-const def=x=>{const L=lastS(x.n);return Array.from({length:x.s},(_,i)=>{const p=L&&(L[i]||L[L.length-1]);return{w:p?p.w:'',r:p&&p.r?p.r:x.r,ok:0}})};
+const def=x=>{const L=lastS(x.n);return Array.from({length:x.s},(_,i)=>{const p=L&&(L[i]||L[L.length-1]);return{w:p?p.w:'',r:p&&p.r?p.r:x.r,ok:0,p:p&&parseFloat(p.w)>0?parseFloat(p.w):0}})};
 const full=d=>{const ex={};S.plan[d].e.forEach(x=>{if(x.g==='Cardio')return;ex[x.n]={g:x.g,sets:Array.from({length:x.s},()=>({w:0,r:x.r,ok:1}))}});return{d,fin:1,ex}};
 const ent=()=>{const t=today(),e=S.log[t]||(S.log[t]={d:vd,fin:0,ex:{}});if(!e.st&&!e.fin)e.st=Date.now();return e};const strt=()=>{ent();save();render()};
 function mat(i){const e=ent(),x=exs(e)[i];if(!e.ex[x.n])e.ex[x.n]={g:x.g,sets:def(x)};return e.ex[x.n].sets}
-const sv=(i,j,f,v)=>{const s=mat(i)[j];if(s.ok)return;s[f]=v;save();rclk()};const rclk=()=>{const el=document.getElementById('clk');if(el)el.innerHTML=clkCard(S.log[today()])};
-const adj=(i,j,d)=>{const s=mat(i)[j];if(s.ok)return;s.w=Math.max(0,Math.round(((parseFloat(s.w)||0)+d)*10)/10);save();render()};
+const sv=(i,j,f,v)=>{const s=mat(i)[j];if(s.ok)return;s[f]=v;if(f==='w')s.af=0;save();rclk()};const rclk=()=>{const el=document.getElementById('clk');if(el)el.innerHTML=clkCard(S.log[today()])};
+const adj=(i,j,d)=>{const s=mat(i)[j];if(s.ok)return;s.w=Math.max(0,Math.round(((parseFloat(s.w)||0)+d)*10)/10);s.af=0;save();render()};
 const adjr=(i,j,d)=>{const s=mat(i)[j];if(s.ok)return;s.r=Math.max(0,(parseInt(s.r)||0)+d);save();render()};
 const ck=(i,j)=>{const s=mat(i)[j];if(smBusy)return;if(!s.ok&&!(+s.r>0)&&!(parseFloat(s.w)>0))return smoke(i,j);s.ok=s.ok?0:1;if(s.ok){const e=ent();if(!e.st&&!e.fin)e.st=Date.now();afill(i,j)}save();render();if(s.ok){tick(i,[j],14);if(mat(i).every(x=>x.ok))restStop();else restStart()}};
 let smBusy=0;
@@ -968,7 +968,7 @@ let GR=0;
 function glide(y){cancelAnimationFrame(GR);const y0=scrollY,max=Math.max(0,document.documentElement.scrollHeight-innerHeight),t=Math.max(0,Math.min(max,y)),dist=t-y0;if(Math.abs(dist)<2)return;const T=Math.min(1000,520+Math.abs(dist)*0.22),t0=performance.now();const step=now=>{const k=Math.min(1,(now-t0)/T),e=k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;scrollTo(0,y0+dist*e);if(k<1)GR=requestAnimationFrame(step)};GR=requestAnimationFrame(step)}
 ['touchstart','wheel','mousedown'].forEach(ev=>addEventListener(ev,()=>cancelAnimationFrame(GR),{passive:true}));
 const fcv=document.createElement('canvas').getContext('2d');
-function fitCalc(el){const f=el.parentNode,lb=f.querySelector('i'),cs=getComputedStyle(el),fc=getComputedStyle(f),avail=f.clientWidth-(parseFloat(fc.paddingLeft)||0)-(parseFloat(fc.paddingRight)||0)-(lb?lb.offsetWidth+(parseFloat(fc.columnGap)||0):0),bad=el.validity&&el.validity.badInput;let t=String(el.value||''),lt=null;if(t)lt=t;else if(bad)t=(el.dataset.lt||'')+'0';else lt='';const m=t||el.placeholder||'0',w=s=>{fcv.font=`${cs.fontWeight} ${s}px ${cs.fontFamily}`;return Math.ceil(fcv.measureText(m).width)+3};let fs=20;while(w(fs)>avail&&fs>9)fs--;return{fs,w:Math.max(12,Math.min(w(fs),avail)),lt}}
+function fitCalc(el){const f=el.parentNode,lb=f.querySelector('i'),cs=getComputedStyle(el),fc=getComputedStyle(f),avail=f.clientWidth-(parseFloat(fc.paddingLeft)||0)-(parseFloat(fc.paddingRight)||0)-(lb?lb.offsetWidth+(parseFloat(fc.columnGap)||0):0),bad=el.validity&&el.validity.badInput;let t=String(el.value||''),lt=null;if(t)lt=t;else if(bad)t=(el.dataset.lt||'')+'0';else lt='';const m=t||el.placeholder||'0',w=s=>{fcv.font=`${cs.fontWeight} ${s}px ${cs.fontFamily}`;return Math.ceil(fcv.measureText(m).width)+3};let fs=(lb&&lb.textContent==='kg')?27:20;while(w(fs)>avail&&fs>9)fs--;return{fs,w:Math.max(12,Math.min(w(fs),avail)),lt}}
 function fitSet(el,r){if(r.lt!==null)el.dataset.lt=r.lt;el.style.fontSize=r.fs===20?'':r.fs+'px';el.style.width=r.w+'px'}
 function fitIn(el){fitSet(el,fitCalc(el))}
 let fitRaf=0;const fitAll=()=>{const els=[...document.querySelectorAll('.set input')],rs=els.map(fitCalc);els.forEach((e,i)=>fitSet(e,rs[i]))};addEventListener('resize',()=>{cancelAnimationFrame(fitRaf);fitRaf=requestAnimationFrame(fitAll)});
@@ -993,7 +993,9 @@ function recSet(n){const t=today();let w=0,r=0;for(const[k,e]of Object.entries(S
 function planRow(x,e){const o=recSet(x.n),rt=o?'Rekord – '+(o.w>0?f1(o.w)+' kg × '+o.r:o.r+' powt.'):'',rm=recMax(x.n),tm=topW(e,x.n),
  nr=rm>0&&tm>rm?'<div style="text-align:right;font-size:12px;font-weight:700;color:var(--ok);margin-top:2px">🏆 Nowy rekord '+f1(tm)+' kg</div>':'';
  return '<div class=mu style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:2px;line-height:1.25;font-size:11px"><span>plan '+x.s+'×'+x.r+'</span><span style="text-align:right">'+rt+'</span></div>'+nr}
-function afill(i,j){const a=mat(i),w=a[j].w;if(!(parseFloat(w)>0))return;for(let k=j+1;k<a.length;k++)if(!a[k].ok)a[k].w=w}
+function afill(i,j){const a=mat(i),s=a[j],w=s.w,wn=parseFloat(w);if(!(wn>0))return;
+ if(s.p>0&&wn!==s.p){const d=wn-s.p;for(let k=j+1;k<a.length;k++){const q=a[k];if(!q.ok&&!q.af&&q.p>0&&parseFloat(q.w)===q.p){q.w=Math.max(0,Math.round((q.p+d)*10)/10);q.p=q.w}}} s.p=wn; /* podniesienie/obniżenie ciężaru względem poprzedniego treningu przesuwa o tę samą różnicę kolejne zapisane serie */
+ for(let k=j+1;k<a.length;k++)if(!a[k].ok&&(!(parseFloat(a[k].w)>0)||a[k].af)){a[k].w=w;a[k].af=1}} /* przenosi ciężar tylko do pustych lub wcześniej auto-wypełnionych serii – wartości z poprzedniego treningu zostają */
 let AC=null;
 function audioUnlock(){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;AC=AC||new C();if(AC.state==='suspended')AC.resume()}catch(e){}}
 ['touchstart','pointerdown','keydown'].forEach(ev=>addEventListener(ev,audioUnlock,{passive:true}));
