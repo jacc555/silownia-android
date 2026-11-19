@@ -47,5 +47,3 @@ Eksport w wersji 2 otwiera okno udostępniania telefonu: wybierz Dysk Google, Pl
 ## Gdyby budowanie się nie udało
 Otwórz nieudane uruchomienie w zakładce Actions, skopiuj komunikat błędu z czerwonego kroku
 i wyślij go, a poprawię konfigurację. Pierwsze budowanie nowego projektu bywa kapryśne.
-
-Test aktualizacji APK czyli sprawdzenie
