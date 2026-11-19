@@ -113,3 +113,4 @@ jobs:
             echo "- Bezpośredni plik: https://github.com/${{ github.repository }}/releases/download/v${{ github.run_number }}/Silownia.apk"
             echo "- Rodzaj: natywna=${{ steps.kind.outputs.native }} (false = tylko zmiana www/index.html, wydanie oznaczone jako Pre-release)"
           } >> "$GITHUB_STEP_SUMMARY"
+        
