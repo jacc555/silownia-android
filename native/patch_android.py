@@ -100,8 +100,9 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden)setT
 '''
 
 # 6) karta aktualizacji natywnej (tylko apka z APK): sprawdza najnowszy Release na GitHubie.
-#    Pojawia się na środku ekranu na 3 s, potem zjeżdża i przykleja się pod napisem "Ustawienia"
-#    (a gdy go nie ma na ekranie, ląduje na dole). Podąża za nim przy przewijaniu.
+#    Pojawia się na środku ekranu na 3 s, potem zjeżdża w dół i ląduje WEWNĄTRZ listy Ustawienia, na jej
+#    samym końcu (jako zwykły element listy, więc niczego nie zasłania). Gdy Ustawienia są zwinięte,
+#    karta chowa się w środku, a przy napisie "Ustawienia" zapala się kropka, że czeka tam aktualizacja.
 #    Po "Pobierz" aplikacja sama pobiera APK i uruchamia instalator Androida (wtyczka ApkInstaller).
 #    Gdy wtyczki nie ma (stara wersja apki), otwiera link w przeglądarce.
 #    Release po zmianie samego www/index.html jest pre-release, więc go ignoruje (to robi OTA).
@@ -109,27 +110,41 @@ UPD_JS = r'''(function(){
 var B=+'__BUILD__'||0,R='__REPO__',L=localStorage,shown=0,busy=0;
 if(!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()))return;
 function show(v,url){
- var d=document.createElement('div'),st=0,tm=0;
- d.style.cssText='position:fixed;left:12px;right:12px;max-width:536px;margin:0 auto;z-index:27;background:var(--card,#171a1f);color:var(--tx,#eef0f3);border:1px solid var(--ac,#e8590c);border-radius:18px;padding:16px;box-shadow:0 10px 34px rgba(0,0,0,.45);text-align:center;font:15px/1.4 system-ui,-apple-system,sans-serif';
+ var d=document.createElement('div'),st=0,tm=0,dot=null,ph=null,gone=0;
+ var BASE='background:var(--card,#171a1f);color:var(--tx,#eef0f3);border:1px solid var(--ac,#e8590c);border-radius:18px;padding:16px;text-align:center;font:15px/1.4 system-ui,-apple-system,sans-serif;';
+ var FLOAT='position:fixed;left:12px;right:12px;max-width:536px;margin:0 auto;z-index:27;box-shadow:0 10px 34px rgba(0,0,0,.45);';
+ var FLOW='position:relative;margin:0 12px 12px;box-shadow:none;';
  var bs='flex:1;border:0;border-radius:10px;padding:12px 8px;font:inherit;cursor:pointer;';
- d.innerHTML='<b style="display:block;font-size:17px">Dostępna nowa wersja</b><div style="color:var(--mu,#8b94a1);font-size:13px;margin-top:2px">Siłownia '+v+'</div><div style="display:flex;gap:10px;margin-top:12px"><button id="upd_go" style="'+bs+'background:var(--ac,#e8590c);color:#fff;font-weight:700">Pobierz</button><button id="upd_no" style="'+bs+'background:var(--ln,#262b33);color:inherit">Później</button></div>';
- function anchor(){var all=document.body.getElementsByTagName('*'),best=null,bl=99;for(var i=0;i<all.length;i++){var e=all[i];if(e===d||d.contains(e))continue;var tx=(e.textContent||'').trim().toLowerCase();if(tx.indexOf('ustawienia')<0||tx.length>=bl)continue;var q=e.getBoundingClientRect();if(q.width>0&&q.height>0){best=q;bl=tx.length}}return best}
- function place(){var a=anchor();if(a){d.style.bottom='auto';d.style.top=Math.max(8,Math.round(a.bottom+8))+'px'}else{d.style.top='auto';d.style.bottom='calc(16px + env(safe-area-inset-bottom,0px))'}}
- document.body.appendChild(d);place();
- var raf=0;function rp(){cancelAnimationFrame(raf);raf=requestAnimationFrame(place)}
- addEventListener('scroll',rp,true);addEventListener('resize',rp);
- var r=d.getBoundingClientRect(),dy=Math.round(innerHeight/2-r.height/2-r.top);
- d.style.transform='translateY('+dy+'px)';
- d.animate([{opacity:0,transform:'translateY('+dy+'px) scale(.85)'},{opacity:1,transform:'translateY('+dy+'px) scale(1)'}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});
- function dock(){if(st!==0)return;st=1;d.style.transform='none';d.animate([{transform:'translateY('+dy+'px)'},{transform:'translateY(0)'}],{duration:650,easing:'cubic-bezier(.2,.9,.3,1)'})}
- function close(){d.style.pointerEvents='none';var a=d.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(30px)'}],{duration:350,easing:'ease-in',fill:'forwards'});a.onfinish=function(){removeEventListener('scroll',rp,true);removeEventListener('resize',rp);d.remove()}}
+ d.style.cssText=BASE+FLOAT+'top:0;';
+ d.innerHTML='<b style=\"display:block;font-size:17px\">Dostępna nowa wersja</b><div style=\"color:var(--mu,#8b94a1);font-size:13px;margin-top:2px\">Siłownia '+v+'</div><div style=\"display:flex;gap:10px;margin-top:12px\"><button id=\"upd_go\" style=\"'+bs+'background:var(--ac,#e8590c);color:#fff;font-weight:700\">Pobierz</button><button id=\"upd_no\" style=\"'+bs+'background:var(--ln,#262b33);color:inherit\">Później</button></div>';
+ document.body.appendChild(d);
+ d.style.top=Math.max(8,Math.round(innerHeight/2-d.offsetHeight/2))+'px';
+ d.animate([{opacity:0,transform:'scale(.85)'},{opacity:1,transform:'scale(1)'}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});
+ function badge(on){var sm=document.querySelector('#sd>summary');if(!sm)return;if(on&&!dot){dot=document.createElement('span');dot.title='Nowa wersja';dot.style.cssText='display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ac,#e8590c);margin-left:8px;vertical-align:middle';sm.appendChild(dot)}else if(!on&&dot){dot.remove();dot=null}}
+ function inflow(){d.style.cssText=BASE+FLOW}
+ function dock(){
+  if(st!==0||gone)return;st=1;
+  var host=document.getElementById('sd'),r0=d.getBoundingClientRect();
+  if(!host){d.style.top='auto';d.style.bottom='calc(16px + env(safe-area-inset-bottom,0px))';var r1=d.getBoundingClientRect();d.animate([{transform:'translateY('+Math.round(r0.top-r1.top)+'px)'},{transform:'translateY(0)'}],{duration:650,easing:'cubic-bezier(.2,.9,.3,1)'});return}
+  if(!host.open){var a=d.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(40px)'}],{duration:450,easing:'ease-in',fill:'forwards'});a.onfinish=function(){a.cancel();if(gone)return;inflow();host.appendChild(d);badge(1)};return}
+  ph=document.createElement('div');ph.style.cssText='margin:0 12px 12px;height:'+d.offsetHeight+'px';host.appendChild(ph);
+  d.style.right='auto';d.style.margin='0';d.style.width=r0.width+'px';d.style.left=r0.left+'px';
+  var t0=performance.now();
+  (function f(now){
+   if(gone)return;
+   var p=Math.min(1,(now-t0)/700),e=1-Math.pow(1-p,3),t=ph.getBoundingClientRect();
+   if(!t.width){inflow();ph.replaceWith(d);ph=null;badge(1);return}
+   d.style.left=(r0.left+(t.left-r0.left)*e)+'px';d.style.top=(r0.top+(t.top-r0.top)*e)+'px';d.style.width=(r0.width+(t.width-r0.width)*e)+'px';
+   if(p<1)requestAnimationFrame(f);else{inflow();ph.replaceWith(d);ph=null}
+  })(t0);
+ }
+ function close(){gone=1;clearTimeout(tm);d.style.pointerEvents='none';var a=d.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(30px)'}],{duration:350,easing:'ease-in',fill:'forwards'});a.onfinish=function(){badge(0);if(ph)ph.remove();d.remove()}}
  tm=setTimeout(dock,3380);
- d.querySelector('#upd_no').onclick=function(){clearTimeout(tm);close()};
+ d.querySelector('#upd_no').onclick=function(){close()};
  d.querySelector('#upd_go').onclick=function(){
   if(st===2)return;clearTimeout(tm);
-  if(st===0){d.style.transform='none';d.animate([{transform:'translateY('+dy+'px)'},{transform:'translateY(0)'}],{duration:450,easing:'cubic-bezier(.2,.9,.3,1)'})}
   st=2;try{L.setItem('upd_dl',String(Date.now()))}catch(e){}
-  function msg(t,s){d.innerHTML='<b style="display:block;font-size:17px">'+t+'</b><div style="color:var(--mu,#8b94a1);font-size:13px;margin-top:4px">'+s+'</div>'}
+  function msg(t,s){d.innerHTML='<b style=\"display:block;font-size:17px\">'+t+'</b><div style=\"color:var(--mu,#8b94a1);font-size:13px;margin-top:4px\">'+s+'</div>'}
   var P=window.Capacitor.Plugins&&window.Capacitor.Plugins.ApkInstaller;
   if(!P){msg('Pobieranie ruszyło','Gdy plik się pobierze, otwórz go z powiadomienia i potwierdź instalację.');try{window.open(url,'_blank')}catch(e){}setTimeout(close,3500);return}
   msg('Pobieranie…','Za chwilę pojawi się okno instalacji.');
