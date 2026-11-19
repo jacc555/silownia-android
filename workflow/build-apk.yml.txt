@@ -1,0 +1,64 @@
+name: Zbuduj APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Czy to zmiana natywna (nie tylko www/index.html)
+        id: kind
+        run: |
+          native=true
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            if ! git diff --name-only "$BEFORE" HEAD | grep -qv '^www/index.html$'; then
+              native=false
+            fi
+          fi
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Zależności
+        run: npm install
+      - name: Projekt Androida
+        run: npx cap add android
+      - name: Ikony, uprawnienia, splash
+        run: python3 native/patch_android.py
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+      - name: Synchronizacja
+        run: npx cap sync android
+      - name: Licencje Androida
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Stały klucz podpisu (ten sam przy każdym buildzie)
+        run: mkdir -p ~/.android && cp native/debug.keystore ~/.android/debug.keystore
+      - name: Budowanie APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Nazwa pliku APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Silownia.apk
+      # Zwykły plik APK w Releases (bez ZIP-a). Release "natywny" jest oznaczony jako najnowszy
+      # i to on wywołuje kartę aktualizacji w apce. Build po zmianie samego www/index.html
+      # trafia jako pre-release, więc apka go ignoruje (takie zmiany idą przez OTA).
+      - name: Release z APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Siłownia 2.${{ github.run_number }}
+          files: Silownia.apk
+          prerelease: ${{ steps.kind.outputs.native != 'true' }}
+          make_latest: ${{ steps.kind.outputs.native == 'true' && 'true' || 'false' }}
