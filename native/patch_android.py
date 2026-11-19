@@ -1,17 +1,18 @@
 """Poprawki projektu Androida wygenerowanego przez `npx cap add android`.
 Każdy krok jest osobny, a błąd jednego (np. inny szablon) nie przerywa budowania."""
-import os, re, shutil
+import os, re, shutil, glob
 
 A = 'android/app/src/main'
 def log(*a): print('[patch]', *a)
 
-# 1) uprawnienia: powiadomienia, dokładne alarmy, wibracje
+# 1) uprawnienia: powiadomienia, dokładne alarmy, wibracje, instalowanie APK
 try:
     p = A + '/AndroidManifest.xml'
     m = open(p, encoding='utf-8').read()
     add = ''
     for q in ('android.permission.POST_NOTIFICATIONS', 'android.permission.USE_EXACT_ALARM',
-              'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.VIBRATE'):
+              'android.permission.RECEIVE_BOOT_COMPLETED', 'android.permission.VIBRATE',
+              'android.permission.REQUEST_INSTALL_PACKAGES'):
         if q not in m: add += '    <uses-permission android:name="%s" />\n' % q
     if 'SCHEDULE_EXACT_ALARM' not in m:
         add += '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />\n'
@@ -100,7 +101,8 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden)setT
 
 # 6) karta aktualizacji natywnej (tylko apka z APK): sprawdza najnowszy Release na GitHubie.
 #    Pojawia się na środku ekranu na 3 s, potem zjeżdża na dół i tam zostaje.
-#    Po "Pobierz" pokazuje komunikat o starcie pobierania i sama się zamyka.
+#    Po "Pobierz" aplikacja sama pobiera APK i uruchamia instalator Androida (wtyczka ApkInstaller).
+#    Gdy wtyczki nie ma (stara wersja apki), otwiera link w przeglądarce.
 #    Release po zmianie samego www/index.html jest pre-release, więc go ignoruje (to robi OTA).
 UPD_JS = r'''(function(){
 var B=+'__BUILD__'||0,R='__REPO__',L=localStorage,shown=0,busy=0,last=0;
@@ -122,9 +124,16 @@ function show(v,url){
   if(st===2)return;clearTimeout(tm);
   if(st===0){d.style.transform='none';d.animate([{transform:'translateY('+dy+'px)'},{transform:'translateY(0)'}],{duration:450,easing:'cubic-bezier(.2,.9,.3,1)'})}
   st=2;try{L.setItem('upd_dl',String(Date.now()))}catch(e){}
-  d.innerHTML='<b style="display:block;font-size:17px">Pobieranie ruszyło</b><div style="color:var(--mu,#8b94a1);font-size:13px;margin-top:4px">Gdy plik się pobierze, otwórz go z powiadomienia i potwierdź instalację.</div>';
-  try{window.open(url,'_blank')}catch(e){}
-  setTimeout(close,3500)}
+  function msg(t,s){d.innerHTML='<b style="display:block;font-size:17px">'+t+'</b><div style="color:var(--mu,#8b94a1);font-size:13px;margin-top:4px">'+s+'</div>'}
+  var P=window.Capacitor.Plugins&&window.Capacitor.Plugins.ApkInstaller;
+  if(!P){msg('Pobieranie ruszyło','Gdy plik się pobierze, otwórz go z powiadomienia i potwierdź instalację.');try{window.open(url,'_blank')}catch(e){}setTimeout(close,3500);return}
+  msg('Pobieranie…','Za chwilę pojawi się okno instalacji.');
+  P.install({url:url}).then(function(){setTimeout(close,2500)}).catch(function(e){
+   try{L.removeItem('upd_dl')}catch(x){}
+   if(String(e&&e.message||e).indexOf('need_permission')>=0){msg('Potrzebna zgoda','Włącz zezwolenie dla Siłowni, wróć do aplikacji i dotknij Pobierz jeszcze raz.')}
+   else{msg('Nie udało się','Otwieram pobieranie w przeglądarce.');try{window.open(url,'_blank')}catch(x){}}
+   setTimeout(close,5000)})
+ }
 }
 function check(){
  if(shown||busy||!navigator.onLine||Date.now()-last<600000)return;
@@ -156,3 +165,93 @@ try:
     open('www/ota.js', 'w', encoding='utf-8').write((OTA_JS + UPD_JS).replace('__BUILD__', build).replace('__REPO__', repo))
     log('OTA włączone, repo:', repo, 'build:', build)
 except Exception as e: log('UWAGA OTA (aplikacja działa bez aktualizacji z GitHuba):', e)
+
+# 7) natywna instalacja APK: wtyczka Capacitora (pobiera plik i uruchamia instalator Androida)
+PLUGIN_JAVA = r'''package __PKG__;
+
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import androidx.core.content.FileProvider;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+@CapacitorPlugin(name = "ApkInstaller")
+public class ApkInstallerPlugin extends Plugin {
+    @PluginMethod
+    public void install(final PluginCall call) {
+        final String url = call.getString("url");
+        final Context ctx = getContext();
+        if (url == null || !url.startsWith("https://")) { call.reject("bad_url"); return; }
+        if (Build.VERSION.SDK_INT >= 26 && !ctx.getPackageManager().canRequestPackageInstalls()) {
+            Intent s = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + ctx.getPackageName()));
+            s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(s);
+            call.reject("need_permission");
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    File dir = new File(ctx.getCacheDir(), "updates");
+                    dir.mkdirs();
+                    File f = new File(dir, "update.apk");
+                    if (f.exists()) f.delete();
+                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                    c.setInstanceFollowRedirects(true);
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(30000);
+                    if (c.getResponseCode() != 200) { call.reject("http_" + c.getResponseCode()); return; }
+                    InputStream in = c.getInputStream();
+                    FileOutputStream out = new FileOutputStream(f);
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    out.close(); in.close();
+                    Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", f);
+                    Intent i = new Intent(Intent.ACTION_VIEW);
+                    i.setDataAndType(uri, "application/vnd.android.package-archive");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    ctx.startActivity(i);
+                    call.resolve();
+                } catch (Exception e) {
+                    call.reject("fail: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+}
+'''
+
+try:
+    mains = glob.glob(A + '/java/**/MainActivity.java', recursive=True)
+    if not mains: raise Exception('brak MainActivity.java')
+    mp = mains[0]
+    ms = open(mp, encoding='utf-8').read()
+    pkg = re.search(r'^package\s+([\w.]+);', ms, re.M).group(1)
+    open(os.path.join(os.path.dirname(mp), 'ApkInstallerPlugin.java'), 'w', encoding='utf-8').write(
+        PLUGIN_JAVA.replace('__PKG__', pkg))
+    if 'ApkInstallerPlugin' not in ms:
+        new_cls = ('public class MainActivity extends BridgeActivity {\n'
+                   '    @Override\n'
+                   '    public void onCreate(android.os.Bundle savedInstanceState) {\n'
+                   '        registerPlugin(ApkInstallerPlugin.class);\n'
+                   '        super.onCreate(savedInstanceState);\n'
+                   '    }\n}\n')
+        ms2 = re.sub(r'public class MainActivity extends BridgeActivity\s*\{\s*\}', new_cls, ms, count=1)
+        if ms2 == ms: raise Exception('nietypowy MainActivity')
+        open(mp, 'w', encoding='utf-8').write(ms2)
+    if 'fileprovider' not in open(A + '/AndroidManifest.xml', encoding='utf-8').read().lower():
+        log('UWAGA: brak FileProvider w manifeście')
+    log('wtyczka ApkInstaller dodana, pakiet:', pkg)
+except Exception as e: log('UWAGA instalator APK:', e)
