@@ -3,11 +3,26 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   apk:
-    runs-on: runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Czy to zmiana natywna (nie tylko www/index.html)
+        id: kind
+        run: |
+          native=true
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            if ! git diff --name-only "$BEFORE" HEAD | grep -qv '^www/index.html$'; then
+              native=false
+            fi
+          fi
+          echo "native=$native" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -34,7 +49,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
-      - uses: actions/upload-artifact@v4
+      - name: Nazwa pliku APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Silownia.apk
+      # Zwykły plik APK w Releases (bez ZIP-a). Release "natywny" jest oznaczony jako najnowszy
+      # i to on wywołuje kartę aktualizacji w apce. Build po zmianie samego www/index.html
+      # trafia jako pre-release, więc apka go ignoruje (takie zmiany idą przez OTA).
+      - name: Release z APK
+        uses: softprops/action-gh-release@v2
         with:
-          name: Silownia-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: v${{ github.run_number }}
+          name: Siłownia 2.${{ github.run_number }}
+          files: Silownia.apk
+          prerelease: ${{ steps.kind.outputs.native != 'true' }}
+          make_latest: ${{ steps.kind.outputs.native == 'true' && 'true' || 'false' }}
