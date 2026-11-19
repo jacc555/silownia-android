@@ -255,3 +255,20 @@ try:
         log('UWAGA: brak FileProvider w manifeście')
     log('wtyczka ApkInstaller dodana, pakiet:', pkg)
 except Exception as e: log('UWAGA instalator APK:', e)
+
+# 8) STAŁY KLUCZ PODPISU: jawnie wskazujemy native/debug.keystore (alias androiddebugkey, hasło android).
+#    Gdy się nie uda, build się przerywa (lepiej błąd niż losowy klucz i brak aktualizacji).
+p = 'android/app/build.gradle'
+g = open(p, encoding='utf-8').read()
+ks = os.path.abspath('native/debug.keystore').replace('\\', '/')
+if not os.path.isfile(ks): raise SystemExit('BRAK native/debug.keystore – przerywam build')
+if 'signingConfigs.fixed' not in g:
+    sc = ("    signingConfigs {\n        fixed {\n            storeFile file('%s')\n"
+          "            storePassword 'android'\n            keyAlias 'androiddebugkey'\n"
+          "            keyPassword 'android'\n        }\n    }\n") % ks
+    g2 = re.sub(r'(\n\s*android\s*\{\n)', lambda m: m.group(1) + sc, g, count=1)
+    if g2 == g: raise SystemExit('Nie znaleziono bloku android { w build.gradle')
+    g3 = re.sub(r'(\n\s*buildTypes\s*\{\n)', lambda m: m.group(1) + '        debug {\n            signingConfig signingConfigs.fixed\n        }\n', g2, count=1)
+    if g3 == g2: raise SystemExit('Nie znaleziono bloku buildTypes { w build.gradle')
+    open(p, 'w', encoding='utf-8').write(g3)
+log('stały klucz podpisu ustawiony:', ks)
