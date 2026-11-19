@@ -79,6 +79,12 @@ jobs:
       - name: Przygotuj APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk Silownia.apk
 
+      - name: Sprawdź podpis APK (musi być klucz z repozytorium)
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs Silownia.apk | tee cert.txt
+          grep -q 'c8ed9655afc3cc744c7a1ab6ffad7e6f218f4566e182753cb80863c7c3639ab6' cert.txt
+
       # Zachowujemy Artifact w Actions, tak jak wcześniej.
       - name: Zapisz APK jako Artifact
         uses: actions/upload-artifact@v4
@@ -113,4 +119,3 @@ jobs:
             echo "- Bezpośredni plik: https://github.com/${{ github.repository }}/releases/download/v${{ github.run_number }}/Silownia.apk"
             echo "- Rodzaj: natywna=${{ steps.kind.outputs.native }} (false = tylko zmiana www/index.html, wydanie oznaczone jako Pre-release)"
           } >> "$GITHUB_STEP_SUMMARY"
-        
