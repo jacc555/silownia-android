@@ -100,24 +100,29 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden)setT
 '''
 
 # 6) karta aktualizacji natywnej (tylko apka z APK): sprawdza najnowszy Release na GitHubie.
-#    Pojawia się na środku ekranu na 3 s, potem zjeżdża na dół i tam zostaje.
+#    Pojawia się na środku ekranu na 3 s, potem zjeżdża i przykleja się pod napisem "Ustawienia"
+#    (a gdy go nie ma na ekranie, ląduje na dole). Podąża za nim przy przewijaniu.
 #    Po "Pobierz" aplikacja sama pobiera APK i uruchamia instalator Androida (wtyczka ApkInstaller).
 #    Gdy wtyczki nie ma (stara wersja apki), otwiera link w przeglądarce.
 #    Release po zmianie samego www/index.html jest pre-release, więc go ignoruje (to robi OTA).
 UPD_JS = r'''(function(){
-var B=+'__BUILD__'||0,R='__REPO__',L=localStorage,shown=0,busy=0,last=0;
+var B=+'__BUILD__'||0,R='__REPO__',L=localStorage,shown=0,busy=0;
 if(!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()))return;
 function show(v,url){
  var d=document.createElement('div'),st=0,tm=0;
- d.style.cssText='position:fixed;left:12px;right:12px;max-width:536px;margin:0 auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:27;background:var(--card,#171a1f);color:var(--tx,#eef0f3);border:1px solid var(--ac,#e8590c);border-radius:18px;padding:16px;box-shadow:0 10px 34px rgba(0,0,0,.45);text-align:center;font:15px/1.4 system-ui,-apple-system,sans-serif';
+ d.style.cssText='position:fixed;left:12px;right:12px;max-width:536px;margin:0 auto;z-index:27;background:var(--card,#171a1f);color:var(--tx,#eef0f3);border:1px solid var(--ac,#e8590c);border-radius:18px;padding:16px;box-shadow:0 10px 34px rgba(0,0,0,.45);text-align:center;font:15px/1.4 system-ui,-apple-system,sans-serif';
  var bs='flex:1;border:0;border-radius:10px;padding:12px 8px;font:inherit;cursor:pointer;';
  d.innerHTML='<b style="display:block;font-size:17px">Dostępna nowa wersja</b><div style="color:var(--mu,#8b94a1);font-size:13px;margin-top:2px">Siłownia '+v+'</div><div style="display:flex;gap:10px;margin-top:12px"><button id="upd_go" style="'+bs+'background:var(--ac,#e8590c);color:#fff;font-weight:700">Pobierz</button><button id="upd_no" style="'+bs+'background:var(--ln,#262b33);color:inherit">Później</button></div>';
- document.body.appendChild(d);
+ function anchor(){var all=document.body.getElementsByTagName('*'),best=null,bl=99;for(var i=0;i<all.length;i++){var e=all[i];if(e===d||d.contains(e))continue;var tx=(e.textContent||'').trim().toLowerCase();if(tx.indexOf('ustawienia')<0||tx.length>=bl)continue;var q=e.getBoundingClientRect();if(q.width>0&&q.height>0){best=q;bl=tx.length}}return best}
+ function place(){var a=anchor();if(a){d.style.bottom='auto';d.style.top=Math.max(8,Math.round(a.bottom+8))+'px'}else{d.style.top='auto';d.style.bottom='calc(16px + env(safe-area-inset-bottom,0px))'}}
+ document.body.appendChild(d);place();
+ var raf=0;function rp(){cancelAnimationFrame(raf);raf=requestAnimationFrame(place)}
+ addEventListener('scroll',rp,true);addEventListener('resize',rp);
  var r=d.getBoundingClientRect(),dy=Math.round(innerHeight/2-r.height/2-r.top);
  d.style.transform='translateY('+dy+'px)';
  d.animate([{opacity:0,transform:'translateY('+dy+'px) scale(.85)'},{opacity:1,transform:'translateY('+dy+'px) scale(1)'}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});
  function dock(){if(st!==0)return;st=1;d.style.transform='none';d.animate([{transform:'translateY('+dy+'px)'},{transform:'translateY(0)'}],{duration:650,easing:'cubic-bezier(.2,.9,.3,1)'})}
- function close(){d.style.pointerEvents='none';var a=d.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(30px)'}],{duration:350,easing:'ease-in',fill:'forwards'});a.onfinish=function(){d.remove()}}
+ function close(){d.style.pointerEvents='none';var a=d.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(30px)'}],{duration:350,easing:'ease-in',fill:'forwards'});a.onfinish=function(){removeEventListener('scroll',rp,true);removeEventListener('resize',rp);d.remove()}}
  tm=setTimeout(dock,3380);
  d.querySelector('#upd_no').onclick=function(){clearTimeout(tm);close()};
  d.querySelector('#upd_go').onclick=function(){
@@ -136,13 +141,15 @@ function show(v,url){
  }
 }
 function check(){
- if(shown||busy||!navigator.onLine||Date.now()-last<600000)return;
+ var lc=0;try{lc=+L.getItem('upd_chk')||0}catch(e){}
+ if(shown||busy||!navigator.onLine||Date.now()-lc<3600000)return;
  var dl=0;try{dl=+L.getItem('upd_dl')||0}catch(e){}
  if(Date.now()-dl<1800000)return;
- last=Date.now();busy=1;
+ busy=1;
  fetch('https://api.github.com/repos/'+R+'/releases/latest',{cache:'no-store',headers:{Accept:'application/vnd.github+json'}})
  .then(function(r){return r.ok?r.json():null}).then(function(j){
-  busy=0;if(!j||j.draft||j.prerelease)return;
+  busy=0;if(j)try{L.setItem('upd_chk',String(Date.now()))}catch(e){}
+  if(!j||j.draft||j.prerelease)return;
   var m=/(\d+)/.exec(j.tag_name||''),n=m?+m[1]:0;if(!n||n<=B)return;
   var u='',a=j.assets||[];for(var i=0;i<a.length;i++)if(/\.apk$/i.test(a[i].name||'')){u=a[i].browser_download_url;break}
   if(!u)return;shown=1;show('2.'+n,u)
